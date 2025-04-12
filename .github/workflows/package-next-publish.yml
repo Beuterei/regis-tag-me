@@ -9,8 +9,9 @@ jobs:
     permissions:
       pull-requests: write
     secrets: inherit
-
     uses: Beuterei/reusable-workflows/.github/workflows/node-qa-tests.yml@main
+    with:
+      test_runner: vitest
 name: "Publish pack with next dist-tag with npm registry"
 
 on:
