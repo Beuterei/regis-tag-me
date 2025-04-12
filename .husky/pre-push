@@ -1,0 +1,5 @@
+npx hook-cli checkForFileChanged CHANGELOG.md
+npx hook-cli checkForVulnerabilities
+npx hook-cli updateReminder -n
+
+npm run test:cov

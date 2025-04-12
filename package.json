@@ -2,6 +2,24 @@
   "name": "@beuluis/regis-tag-me",
   "version": "1.0.0",
   "description": "Defines react based custom elements and validates the attributes",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Beuterei/regis-tag-me.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Beuterei/regis-tag-me/issues"
+  },
+  "author": "Luis Beu <me@luisbeu.de> (https://luisbeu.de/)",
+  "license": "MIT",
+  "homepage": "https://github.com/Beuterei/regis-tag-me#readme",
+  "keywords": [
+    "react",
+    "custom-elements",
+    "web-components",
+    "validation",
+    "zod",
+    "typescript"
+  ],
   "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
@@ -15,14 +33,17 @@
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "lint": "eslint . --cache",
     "build": "vite build",
     "test": "vitest run",
-    "test:cov": "vitest run --coverage"
+    "test:cov": "vitest run --coverage",
+    "prepack": "npm run build",
+    "prepare": "husky"
   },
-  "author": "Luis Beu <me@luisbeu.de> (https://luisbeu.de/)",
-  "license": "MIT",
   "peerDependencies": {
     "react": ">=19.0.0",
     "react-dom": ">=19.0.0",
@@ -30,6 +51,7 @@
   },
   "devDependencies": {
     "@beuluis/eslint-config": "3.0.1",
+    "@beuluis/hook-cli": "1.2.1",
     "@testing-library/jest-dom": "6.6.3",
     "@testing-library/react": "16.3.0",
     "@types/react": "19.1.1",
@@ -37,7 +59,9 @@
     "@vitejs/plugin-react": "4.3.4",
     "@vitest/coverage-v8": "3.1.1",
     "eslint": "9.24.0",
+    "husky": "9.1.7",
     "jsdom": "26.0.0",
+    "lint-staged": "15.5.1",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "typescript": "5.8.3",
@@ -47,5 +71,10 @@
     "vite-plugin-dts": "4.5.3",
     "vitest": "3.1.1",
     "zod": "4.0.0-beta.20250412T085909"
+  },
+  "lint-staged": {
+    "*.{js,ts,json,yml,yaml,tsx,jsx}": [
+      "eslint"
+    ]
   }
 }
