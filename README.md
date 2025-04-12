@@ -39,7 +39,7 @@ Defines react based custom elements and validates the attributes.
 ### Installation
 
 ```bash
-npm i -D @beuluis/regis-tag-me
+npm i @beuluis/regis-tag-me zod
 ```
 
 ## Usage
@@ -51,13 +51,20 @@ import {
 } from "@beuluis/regis-tag-me";
 import { z } from "zod";
 
-const MyCustomElement = ({ firstName }: { firstName: string }) => {
+const MyCustomElement = ({
+    firstName,
+    showGreeting = true,
+}: {
+    firstName: string;
+    showGreeting: boolean;
+}) => {
     const { containerElement, element, hasShadowDom, stylesContainer } =
         useWebComponentContext();
 
     return (
         <div>
-            Hello {firstName} from {element.tagName}
+            Hello {firstName} from {element.tagName}. I am{" "}
+            {hasShadowDom ? "" : "not"} rendered in a shadow DOM.
         </div>
     );
 };
@@ -65,17 +72,33 @@ const MyCustomElement = ({ firstName }: { firstName: string }) => {
 registerWebComponent(
     "my-custom-element",
     MyCustomElement,
-    z.object({
+    z.interface({
         firstName: z.string().default("Guest"),
+        useShadow: z.stringbool({
+            falsy: ["false"],
+            truthy: [""], // empty string is truthy since its what we get when the attribute is just set without a value
+        }),
     }),
+    {
+        shadowDOM: ({ useShadow }) => useShadow,
+    },
 );
 ```
 
 Use the custom tag in your HTML:
 
 ```html
-<!-- Result: Hello John from MY-CUSTOM-ELEMENT -->
-<my-custom-element first-name="John" />
+<html>
+    <head>
+        <script src="yourBundle.js"></script>
+    </head>
+    <body>
+        <!-- Result: Hello John from MY-CUSTOM-ELEMENT. I am rendered in a shadow DOM. -->
+        <my-custom-element first-name="John" use-shadow />
+        <!-- Result: Hello John from MY-CUSTOM-ELEMENT. I am not rendered in a shadow DOM. -->
+        <my-custom-element first-name="John" />
+    </body>
+</html>
 ```
 
 ### registerWebComponent
@@ -92,12 +115,12 @@ Provides a context for the web component. Returns [WebComponentContext](#webcomp
 
 - `tagName` - The name of the custom element
 - `Component` - The React component to render inside the web component
-- `attributeSchema` - [Zod schema](https://zod.dev/) defining the attributes/props for the component with automatic type conversion for primitives (string, number, boolean, etc.)
+- `attributeSchema` - [StandardSchemaV1](https://github.com/standard-schema/standard-schema) defining the attributes/props for the component
 - `options` - Additional configuration options
-    - `mixin` - Optional mixin to extend the web component's functionality
+    - `mixin` - Optional mixin to extend the web component's functionality. Runs after this library's logic
     - `shadowDOM` - Controls whether to use Shadow DOM
         - If boolean: directly determines Shadow DOM usage
-        - If function: dynamically determines Shadow DOM usage based on attributes
+        - If function: dynamically determines Shadow DOM usage based on attributes. This only takes effect on the first render
 
 ### WebComponentContext
 

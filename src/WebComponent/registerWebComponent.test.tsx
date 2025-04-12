@@ -20,9 +20,8 @@ describe('registerWebComponent', () => {
 
     it('should register a custom element with the given tag name', () => {
         const TestComponent: FC = () => <div>Test</div>;
-        const schema = z.object({});
 
-        registerWebComponent('test-component', TestComponent, schema);
+        registerWebComponent('test-component', TestComponent, z.interface({}));
 
         expect(customElements.get('test-component')).toBeDefined();
     });
@@ -30,10 +29,9 @@ describe('registerWebComponent', () => {
     it('should not re-register an existing custom element', () => {
         const defineSpy = vi.spyOn(customElements, 'define');
         const TestComponent: FC = () => <div>Test</div>;
-        const schema = z.object({});
 
-        registerWebComponent('test-component-2', TestComponent, schema);
-        registerWebComponent('test-component-2', TestComponent, schema);
+        registerWebComponent('test-component-2', TestComponent, z.interface({}));
+        registerWebComponent('test-component-2', TestComponent, z.interface({}));
 
         expect(defineSpy).toHaveBeenCalledTimes(1);
     });
@@ -48,12 +46,14 @@ describe('registerWebComponent', () => {
             </div>
         );
 
-        const schema = z.object({
-            count: z.number(),
-            name: z.string(),
-        });
-
-        registerWebComponent('test-component-3', TestComponent, schema);
+        registerWebComponent(
+            'test-component-3',
+            TestComponent,
+            z.interface({
+                count: z.coerce.number(),
+                name: z.string(),
+            }),
+        );
 
         const element = document.createElement('test-component-3');
         element.setAttribute('name', 'Test');
@@ -63,6 +63,54 @@ describe('registerWebComponent', () => {
         await nextTick();
 
         expect(element.textContent).toBe('Test - 42');
+    });
+
+    it('should throw Error for invalid schema validation', () => {
+        const TestComponent: FC<{ readonly value: string }> = ({ value }) => <div>{value}</div>;
+
+        registerWebComponent(
+            'test-component-invalid',
+            TestComponent,
+            z.interface({
+                value: z.email(),
+            }),
+        );
+
+        const element = document.createElement('test-component-invalid') as HTMLElement & {
+            connectedCallback: () => void;
+        };
+        element.setAttribute('value', 'not-a-number');
+
+        expect(() => {
+            element.connectedCallback();
+        }).toThrowError(/Invalid email address/u);
+    });
+
+    it('should handle default values', async () => {
+        const TestComponent: FC<{ readonly count: number; readonly name: string }> = ({
+            count,
+            name,
+        }) => (
+            <div>
+                {name} - {count}
+            </div>
+        );
+
+        registerWebComponent(
+            'test-component-default',
+            TestComponent,
+            z.interface({
+                count: z.coerce.number().default(0),
+                name: z.string().default('Default'),
+            }),
+        );
+
+        const element = document.createElement('test-component-default');
+        document.body.appendChild(element);
+
+        await nextTick();
+
+        expect(element.textContent).toBe('Default - 0');
     });
 
     it('should parse different attribute types correctly', async () => {
@@ -79,15 +127,17 @@ describe('registerWebComponent', () => {
             </div>
         );
 
-        const schema = z.object({
-            bigIntAttr: z.bigint(),
-            dateAttr: z.date(),
-            numAttr: z.number(),
-            strAttr: z.string(),
-            symbolAttr: z.symbol(),
-        });
-
-        registerWebComponent('test-component-parse', TestComponent, schema);
+        registerWebComponent(
+            'test-component-parse',
+            TestComponent,
+            z.interface({
+                bigIntAttr: z.coerce.bigint(),
+                dateAttr: z.coerce.date(),
+                numAttr: z.coerce.number(),
+                strAttr: z.string(),
+                symbolAttr: z.string().transform(Symbol),
+            }),
+        );
 
         const element = document.createElement('test-component-parse');
         element.setAttribute('big-int-attr', '1234567890');
@@ -108,11 +158,16 @@ describe('registerWebComponent', () => {
             <div>{String(isEnabled)}</div>
         );
 
-        const schema = z.object({
-            isEnabled: z.boolean(),
-        });
-
-        registerWebComponent('test-component-bool', TestComponent, schema);
+        registerWebComponent(
+            'test-component-bool',
+            TestComponent,
+            z.interface({
+                isEnabled: z.stringbool({
+                    falsy: ['false'],
+                    truthy: ['true', ''],
+                }),
+            }),
+        );
 
         const element1 = document.createElement('test-component-bool');
         element1.setAttribute('is-enabled', '');
@@ -131,12 +186,6 @@ describe('registerWebComponent', () => {
         document.body.appendChild(element3);
         await nextTick();
         expect(element3.textContent).toBe('false');
-
-        const element4 = document.createElement('test-component-bool');
-        element4.setAttribute('is-enabled', 'some-value');
-        document.body.appendChild(element4);
-        await nextTick();
-        expect(element4.textContent).toBe('true');
     });
 
     it('should handle missing optional attributes', async () => {
@@ -144,11 +193,13 @@ describe('registerWebComponent', () => {
             <div>{optionalAttr ?? 'default'}</div>
         );
 
-        const schema = z.object({
-            optionalAttr: z.string().optional(),
-        });
-
-        registerWebComponent('test-component-optional', TestComponent, schema);
+        registerWebComponent(
+            'test-component-optional',
+            TestComponent,
+            z.interface({
+                optionalAttr: z.string().optional(),
+            }),
+        );
 
         const element = document.createElement('test-component-optional');
         document.body.appendChild(element);
@@ -159,9 +210,8 @@ describe('registerWebComponent', () => {
 
     it('should create shadow DOM when specified', async () => {
         const TestComponent: FC = () => <div>Shadow DOM Test</div>;
-        const schema = z.object({});
 
-        registerWebComponent('test-component-5', TestComponent, schema, {
+        registerWebComponent('test-component-5', TestComponent, z.interface({}), {
             shadowDOM: true,
         });
 
@@ -174,15 +224,19 @@ describe('registerWebComponent', () => {
         expect(element.shadowRoot?.querySelector('#root')).toBeDefined();
     });
 
-    it('should handle conditional shadow DOM based on attributes', async () => {
+    it('should handle conditional shadow DOM based on attributes when enabled', async () => {
         const TestComponent: FC<{ useShadow: boolean }> = () => <div>Conditional Shadow</div>;
-        const schema = z.object({
-            useShadow: z.boolean(),
-        });
 
-        registerWebComponent('test-component-6', TestComponent, schema, {
-            shadowDOM: ({ useShadow }) => useShadow,
-        });
+        registerWebComponent(
+            'test-component-6',
+            TestComponent,
+            z.interface({
+                useShadow: z.stringbool(),
+            }),
+            {
+                shadowDOM: ({ useShadow }) => useShadow,
+            },
+        );
 
         const element = document.createElement('test-component-6');
         element.setAttribute('use-shadow', 'true');
@@ -191,6 +245,21 @@ describe('registerWebComponent', () => {
         await nextTick();
 
         expect(element.shadowRoot).toBeDefined();
+    });
+
+    it('should handle conditional shadow DOM based on attributes when disabled', async () => {
+        const TestComponent: FC<{ useShadow: boolean }> = () => <div>Conditional Shadow</div>;
+
+        registerWebComponent(
+            'test-component-6',
+            TestComponent,
+            z.interface({
+                useShadow: z.stringbool(),
+            }),
+            {
+                shadowDOM: ({ useShadow }) => useShadow,
+            },
+        );
 
         const element2 = document.createElement('test-component-6');
         element2.setAttribute('use-shadow', 'false');
@@ -206,11 +275,13 @@ describe('registerWebComponent', () => {
             <div data-testid="test-output">{value}</div>
         );
 
-        const schema = z.object({
-            value: z.string(),
-        });
-
-        registerWebComponent('test-component-7', TestComponent, schema);
+        registerWebComponent(
+            'test-component-7',
+            TestComponent,
+            z.interface({
+                value: z.string(),
+            }),
+        );
 
         const element = document.createElement('test-component-7');
         element.setAttribute('value', 'initial');
@@ -226,9 +297,8 @@ describe('registerWebComponent', () => {
 
     it('should cleanup React root on disconnection', async () => {
         const TestComponent: FC = () => <div>Cleanup Test</div>;
-        const schema = z.object({});
 
-        registerWebComponent('test-component-8', TestComponent, schema);
+        registerWebComponent('test-component-8', TestComponent, z.interface({}));
 
         const element = document.createElement('test-component-8');
         document.body.appendChild(element);
@@ -264,13 +334,17 @@ describe('registerWebComponent', () => {
         };
 
         const TestComponent: FC = () => <div>Mixin Test</div>;
-        const schema = z.object({
-            testAttr: z.string().optional(),
-        });
 
-        registerWebComponent('test-component-9', TestComponent, schema, {
-            mixin,
-        });
+        registerWebComponent(
+            'test-component-9',
+            TestComponent,
+            z.interface({
+                testAttr: z.string().optional(),
+            }),
+            {
+                mixin,
+            },
+        );
 
         const element = document.createElement('test-component-9');
         document.body.appendChild(element);

@@ -2,7 +2,7 @@ import { WebComponentContextProvider } from '../context/webComponentContext';
 import { toKebabCase } from '../utility/helper';
 import { type FC } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { z } from 'zod';
+import { type z } from 'zod';
 
 // Mixin may define same handle methods as other custom element constructors. So we need to call them when they are defined.
 type Mixin = (constructor: CustomElementConstructor) => new () => HTMLElement & {
@@ -17,12 +17,12 @@ type Mixin = (constructor: CustomElementConstructor) => new () => HTMLElement & 
  * Registers a React component as a Web Component (Custom Element)
  * @param tagName - The HTML tag name to register the component as (must contain a hyphen)
  * @param Component - The React component to render inside the web component
- * @param attributeSchema - Zod schema defining the attributes/props for the component with automatic type conversion for primitives (string, number, boolean, etc.)
+ * @param attributeSchema - Zod schema defining the attributes/props for the component. It needs to be a zod schema resulting in a object shape (e.g. z.interface(), z.object(), etc)
  * @param options - Additional configuration options
- * @param options.mixin - Optional mixin to extend the web component's functionality
+ * @param options.mixin - Optional mixin to extend the web component's functionality. Runs after this library's logic
  * @param options.shadowDOM - Controls whether to use Shadow DOM
  *   - If boolean: directly determines Shadow DOM usage
- *   - If function: dynamically determines Shadow DOM usage based on attributes
+ *   - If function: dynamically determines Shadow DOM usage based on attributes. This only takes effect on the first render
  * @example
  * ```tsx
  * // Define a simple React component
@@ -34,9 +34,9 @@ type Mixin = (constructor: CustomElementConstructor) => new () => HTMLElement & 
  * registerWebComponent(
  *   'my-greeting',
  *   Greeting,
- *   z.object({
+ *   z.interface({
  *     firstName: z.string().default('Guest'),
- *     count: z.number().default(0)
+ *     count: z.coerce.number().default(0)
  *   }),
  *   { shadowDOM: true }
  * );
@@ -55,8 +55,11 @@ type Mixin = (constructor: CustomElementConstructor) => new () => HTMLElement & 
  * registerWebComponent(
  *   'shadow-card',
  *   Card,
- *   z.object({
- *     useShadow: z.boolean().default(false)
+ *   z.interface({
+ *     useShadow: z.stringbool({
+ *       falsy: ['false'],
+ *       truthy: [''], // empty string is truthy since its what we get when the attribute is just set without a value
+ *     })
  *   }),
  *   {
  *     shadowDOM: ({ useShadow }) => useShadow
@@ -64,20 +67,28 @@ type Mixin = (constructor: CustomElementConstructor) => new () => HTMLElement & 
  * );
  *
  * // Use in HTML:
- * // <themeable-card content="This uses shadow DOM" use-shadow="true"></themeable-card>
+ * // <themeable-card content="This uses shadow DOM" use-shadow></themeable-card>
  * // <themeable-card content="This doesn't use shadow DOM"></themeable-card>
  * ```
  */
-export const registerWebComponent = <TAttributes extends z.ZodObject<Record<string, z.ZodType>>>(
+export const registerWebComponent = <
+    TSchema extends z.ZodType & {
+        _zod: {
+            def: {
+                shape: z.ZodRawShape;
+            };
+        };
+    },
+>(
     tagName: string,
-    Component: FC<z.output<TAttributes>>,
-    attributeSchema: TAttributes,
+    Component: FC<z.output<TSchema>>,
+    attributeSchema: TSchema,
     options?: {
         mixin?: Mixin;
-        shadowDOM?: ((attributes: z.output<TAttributes>) => boolean) | boolean;
+        shadowDOM?: ((attributes: z.output<TSchema>) => boolean) | boolean;
     },
 ) => {
-    const hasShadowDOM = (attributes: z.output<TAttributes>): boolean =>
+    const hasShadowDOM = (attributes: z.output<TSchema>): boolean =>
         typeof options?.shadowDOM === 'function'
             ? options.shadowDOM(attributes)
             : (options?.shadowDOM ?? false);
@@ -86,7 +97,7 @@ export const registerWebComponent = <TAttributes extends z.ZodObject<Record<stri
 
     class WebComponent extends mixin(HTMLElement) {
         public static get observedAttributes() {
-            return Object.keys(attributeSchema.shape).map(toKebabCase);
+            return Object.keys(attributeSchema.def.shape).map(toKebabCase);
         }
 
         public mountingPoint?: HTMLElement;
@@ -98,16 +109,14 @@ export const registerWebComponent = <TAttributes extends z.ZodObject<Record<stri
         private shadowDOM?: boolean;
 
         public attributeChangedCallback(name: string, oldValue: string, newValue: string) {
-            super.attributeChangedCallback?.(name, oldValue, newValue);
-
             if (!this.isConnected || !this.mountingPoint) return;
 
             this.render(this.parseAttributes());
+
+            super.attributeChangedCallback?.(name, oldValue, newValue);
         }
 
         public connectedCallback() {
-            super.connectedCallback?.();
-
             const parsedAttributes = this.parseAttributes();
 
             this.shadowDOM = hasShadowDOM(parsedAttributes);
@@ -132,76 +141,50 @@ export const registerWebComponent = <TAttributes extends z.ZodObject<Record<stri
             rootContainer.append(this.stylesMountingPoint, this.mountingPoint);
 
             this.render(parsedAttributes);
+
+            super.connectedCallback?.();
         }
 
         public disconnectedCallback() {
-            super.disconnectedCallback?.();
-
             this.root?.unmount();
+
+            super.disconnectedCallback?.();
         }
 
-        private parseAttributes(): z.infer<TAttributes> {
-            const attributes: Record<
-                string,
-                bigint | boolean | Date | number | string | Symbol | undefined
-            > = {};
+        private parseAttributes(): z.output<TSchema> {
+            const attributes: Record<string, unknown> = {};
 
-            for (const attributeDomName in attributeSchema.shape) {
-                if (Object.prototype.hasOwnProperty.call(attributeSchema.shape, attributeDomName)) {
-                    const value = this.getAttribute(toKebabCase(attributeDomName));
+            for (const attributeName of Object.keys(attributeSchema.def.shape)) {
+                if (
+                    Object.prototype.hasOwnProperty.call(attributeSchema.def.shape, attributeName)
+                ) {
+                    const value = this.getAttribute(toKebabCase(attributeName));
 
+                    // If the attribute is not set, we set it to undefined to comply with ts customs
                     if (value === null) {
-                        attributes[attributeDomName] = undefined;
+                        attributes[attributeName] = undefined;
                         continue;
                     }
 
-                    // eslint-disable-next-line @typescript-eslint/switch-exhaustiveness-check
-                    switch (true) {
-                        case attributeSchema.shape[attributeDomName] instanceof z.ZodBoolean:
-                            if (value === 'true') {
-                                attributes[attributeDomName] = true;
-                            } else if (value === 'false') {
-                                attributes[attributeDomName] = false;
-                                // Since getAttribute returns an empty string for empty attributes, we need to set it to true
-                            } else if (value === '') {
-                                attributes[attributeDomName] = true;
-                            } else {
-                                attributes[attributeDomName] = Boolean(value);
-                            }
-
-                            break;
-                        case attributeSchema.shape[attributeDomName] instanceof z.ZodNumber:
-                            attributes[attributeDomName] = Number(value);
-                            break;
-                        case attributeSchema.shape[attributeDomName] instanceof z.ZodBigInt:
-                            attributes[attributeDomName] = BigInt(value);
-                            break;
-                        case attributeSchema.shape[attributeDomName] instanceof z.ZodSymbol:
-                            attributes[attributeDomName] = Symbol(value);
-                            break;
-                        case attributeSchema.shape[attributeDomName] instanceof z.ZodDate:
-                            attributes[attributeDomName] = new Date(value);
-                            break;
-                        default:
-                            attributes[attributeDomName] = value;
-                    }
+                    attributes[attributeName] = value;
                 }
             }
 
             return attributeSchema.parse(attributes);
         }
 
-        private render(parsedAttributes: z.output<TAttributes>) {
+        private render(parsedAttributes: z.output<TSchema>) {
             this.root?.render(
                 <WebComponentContextProvider
-                    containerElement={this}
-                    element={this}
                     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-                    hasShadowDom={this.shadowDOM!}
+                    containerElement={this.mountingPoint!}
+                    element={this}
+                    hasShadowDom={Boolean(this.shadowDOM)}
                     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
                     stylesContainer={this.stylesMountingPoint!}
                 >
-                    <Component {...parsedAttributes} />
+                    {/* TODO: Type this better */}
+                    <Component {...(parsedAttributes as Record<string, unknown>)} />
                 </WebComponentContextProvider>,
             );
         }

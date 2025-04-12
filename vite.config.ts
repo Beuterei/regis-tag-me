@@ -15,7 +15,7 @@ export default defineConfig({
         outDir: 'dist',
         rollupOptions: {
             external: [
-                ...Object.keys(packageJson.dependencies || {}),
+                ...Object.keys(packageJson.peerDependencies ?? {}),
                 'react-dom/client',
                 'react/jsx-runtime',
             ],
@@ -32,6 +32,6 @@ export default defineConfig({
     test: {
         environment: 'jsdom',
         globals: true,
-        setupFiles: ['./test/setup.ts'],
+        setupFiles: ['./setup.ts'],
     },
 });
