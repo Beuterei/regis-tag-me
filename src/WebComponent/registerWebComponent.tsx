@@ -1,16 +1,8 @@
 import { WebComponentContextProvider } from '../context/webComponentContext';
 import { toKebabCase } from '../utility/helper';
-import { type StandardSchemaV1 } from '@standard-schema/spec';
 import { type FC } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-
-type AttributeOutput<TAttributes extends Record<string, StandardSchemaV1>> = {
-    [k in keyof TAttributes]: StandardSchemaV1.InferOutput<TAttributes[k]>;
-};
-
-type AttributeShape<TAttributes extends Record<string, StandardSchemaV1>> = {
-    [k in keyof TAttributes]: TAttributes[k];
-};
+import { type z } from 'zod';
 
 // Mixin may define same handle methods as other custom element constructors. So we need to call them when they are defined.
 type Mixin = (constructor: CustomElementConstructor) => new () => HTMLElement & {
@@ -25,7 +17,7 @@ type Mixin = (constructor: CustomElementConstructor) => new () => HTMLElement & 
  * Registers a React component as a Web Component (Custom Element)
  * @param tagName - The HTML tag name to register the component as (must contain a hyphen)
  * @param Component - The React component to render inside the web component
- * @param attributeSchema - StandardSchemaV1 schema defining the attributes/props for the component
+ * @param attributeSchema - Zod schema defining the attributes/props for the component. It needs to be a zod schema resulting in a object shape (e.g. z.interface(), z.object(), etc)
  * @param options - Additional configuration options
  * @param options.mixin - Optional mixin to extend the web component's functionality. Runs after this library's logic
  * @param options.shadowDOM - Controls whether to use Shadow DOM
@@ -42,10 +34,10 @@ type Mixin = (constructor: CustomElementConstructor) => new () => HTMLElement & 
  * registerWebComponent(
  *   'my-greeting',
  *   Greeting,
- *   {
+ *   z.interface({
  *     firstName: z.string().default('Guest'),
  *     count: z.coerce.number().default(0)
- *   },
+ *   }),
  *   { shadowDOM: true }
  * );
  *
@@ -63,29 +55,40 @@ type Mixin = (constructor: CustomElementConstructor) => new () => HTMLElement & 
  * registerWebComponent(
  *   'shadow-card',
  *   Card,
- *   {
- *     useShadow: z.string().transform(transformBoolean) // transformBoolean is a helper function that converts strings to booleans
- *   },
+ *   z.interface({
+ *     useShadow: z.stringbool({
+ *       falsy: ['false'],
+ *       truthy: [''], // empty string is truthy since its what we get when the attribute is just set without a value
+ *     })
+ *   }),
  *   {
  *     shadowDOM: ({ useShadow }) => useShadow
  *   }
  * );
  *
  * // Use in HTML:
- * // <themeable-card content="This uses shadow DOM" use-shadow="true"></themeable-card>
+ * // <themeable-card content="This uses shadow DOM" use-shadow></themeable-card>
  * // <themeable-card content="This doesn't use shadow DOM"></themeable-card>
  * ```
  */
-export const registerWebComponent = <TAttributes extends Record<string, StandardSchemaV1>>(
+export const registerWebComponent = <
+    TSchema extends z.ZodType & {
+        _zod: {
+            def: {
+                shape: z.ZodRawShape;
+            };
+        };
+    },
+>(
     tagName: string,
-    Component: FC<AttributeOutput<TAttributes>>,
-    attributeSchema: AttributeShape<TAttributes>,
+    Component: FC<z.output<TSchema>>,
+    attributeSchema: TSchema,
     options?: {
         mixin?: Mixin;
-        shadowDOM?: ((attributes: AttributeOutput<TAttributes>) => boolean) | boolean;
+        shadowDOM?: ((attributes: z.output<TSchema>) => boolean) | boolean;
     },
 ) => {
-    const hasShadowDOM = (attributes: AttributeOutput<TAttributes>): boolean =>
+    const hasShadowDOM = (attributes: z.output<TSchema>): boolean =>
         typeof options?.shadowDOM === 'function'
             ? options.shadowDOM(attributes)
             : (options?.shadowDOM ?? false);
@@ -94,7 +97,7 @@ export const registerWebComponent = <TAttributes extends Record<string, Standard
 
     class WebComponent extends mixin(HTMLElement) {
         public static get observedAttributes() {
-            return Object.keys(attributeSchema).map(toKebabCase);
+            return Object.keys(attributeSchema.def.shape).map(toKebabCase);
         }
 
         public mountingPoint?: HTMLElement;
@@ -148,34 +151,29 @@ export const registerWebComponent = <TAttributes extends Record<string, Standard
             super.disconnectedCallback?.();
         }
 
-        private parseAttributes(): AttributeOutput<TAttributes> {
-            const attributes: AttributeOutput<TAttributes> = {} as AttributeOutput<TAttributes>;
+        private parseAttributes(): z.output<TSchema> {
+            const attributes: Record<string, unknown> = {};
 
-            for (const attributeDomName of Object.keys(attributeSchema)) {
-                const attributeValue = this.getAttribute(toKebabCase(attributeDomName));
+            for (const attributeName of Object.keys(attributeSchema.def.shape)) {
+                if (
+                    Object.prototype.hasOwnProperty.call(attributeSchema.def.shape, attributeName)
+                ) {
+                    const value = this.getAttribute(toKebabCase(attributeName));
 
-                if (Object.prototype.hasOwnProperty.call(attributeSchema, attributeDomName)) {
-                    const result = attributeSchema[attributeDomName]['~standard'].validate(
-                        attributeValue ?? undefined,
-                    );
-
-                    if (result instanceof Promise) {
-                        throw new TypeError('Schema validation must be synchronous');
+                    // If the attribute is not set, we set it to undefined to comply with ts customs
+                    if (value === null) {
+                        attributes[attributeName] = undefined;
+                        continue;
                     }
 
-                    if (result.issues) {
-                        throw new Error(JSON.stringify(result.issues, null, 2));
-                    }
-
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    (attributes as any)[attributeDomName] = result.value;
+                    attributes[attributeName] = value;
                 }
             }
 
-            return attributes;
+            return attributeSchema.parse(attributes);
         }
 
-        private render(parsedAttributes: AttributeOutput<TAttributes>) {
+        private render(parsedAttributes: z.output<TSchema>) {
             this.root?.render(
                 <WebComponentContextProvider
                     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
@@ -185,7 +183,8 @@ export const registerWebComponent = <TAttributes extends Record<string, Standard
                     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
                     stylesContainer={this.stylesMountingPoint!}
                 >
-                    <Component {...parsedAttributes} />
+                    {/* TODO: Type this better */}
+                    <Component {...(parsedAttributes as Record<string, unknown>)} />
                 </WebComponentContextProvider>,
             );
         }

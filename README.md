@@ -22,14 +22,13 @@
 </p>
 
 - [About The Project](#about-the-project)
-  - [Installation](#installation)
+    - [Installation](#installation)
 - [Usage](#usage)
-  - [registerWebComponent](#registerwebcomponent)
-  - [transformBoolean](#transformboolean)
-  - [useWebComponentContext](#usewebcomponentcontext)
+    - [registerWebComponent](#registerwebcomponent)
+    - [useWebComponentContext](#usewebcomponentcontext)
 - [Interfaces](#interfaces)
-  - [registerWebComponent](#registerwebcomponent-1)
-  - [WebComponentContext](#webcomponentcontext)
+    - [registerWebComponent](#registerwebcomponent-1)
+    - [WebComponentContext](#webcomponentcontext)
 
 <!-- ABOUT THE PROJECT -->
 
@@ -40,7 +39,7 @@ Defines react based custom elements and validates the attributes.
 ### Installation
 
 ```bash
-npm i -D @beuluis/regis-tag-me
+npm i @beuluis/regis-tag-me zod
 ```
 
 ## Usage
@@ -49,7 +48,6 @@ npm i -D @beuluis/regis-tag-me
 import {
     useWebComponentContext,
     registerWebComponent,
-    transformBoolean,
 } from "@beuluis/regis-tag-me";
 import { z } from "zod";
 
@@ -65,32 +63,47 @@ const MyCustomElement = ({
 
     return (
         <div>
-            {showGreeting && <span>Hello</span>} {firstName} from{" "}
-            {element.tagName}
+            Hello {firstName} from {element.tagName}. I am{" "}
+            {hasShadowDom ? "" : "not"} rendered in a shadow DOM.
         </div>
     );
 };
 
-registerWebComponent("my-custom-element", MyCustomElement, {
-    firstName: z.string().default("Guest"),
-    showGreeting: z.string().transform(transformBoolean),
-});
+registerWebComponent(
+    "my-custom-element",
+    MyCustomElement,
+    z.interface({
+        firstName: z.string().default("Guest"),
+        useShadow: z.stringbool({
+            falsy: ["false"],
+            truthy: [""], // empty string is truthy since its what we get when the attribute is just set without a value
+        }),
+    }),
+    {
+        shadowDOM: ({ useShadow }) => useShadow,
+    },
+);
 ```
 
 Use the custom tag in your HTML:
 
 ```html
-<!-- Result: Hello John from MY-CUSTOM-ELEMENT -->
-<my-custom-element first-name="John" show-greeting />
+<html>
+    <head>
+        <script src="yourBundle.js"></script>
+    </head>
+    <body>
+        <!-- Result: Hello John from MY-CUSTOM-ELEMENT. I am rendered in a shadow DOM. -->
+        <my-custom-element first-name="John" use-shadow />
+        <!-- Result: Hello John from MY-CUSTOM-ELEMENT. I am not rendered in a shadow DOM. -->
+        <my-custom-element first-name="John" />
+    </body>
+</html>
 ```
 
 ### registerWebComponent
 
 Registers a React component as a Web Component (Custom Element) using the given tag name. Takes [registerWebComponent](#registerwebcomponent) as arguments.
-
-### transformBoolean
-
-Helper to parse booleans correctly if passed by attributes.
 
 ### useWebComponentContext
 
