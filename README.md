@@ -22,13 +22,14 @@
 </p>
 
 - [About The Project](#about-the-project)
-    - [Installation](#installation)
+  - [Installation](#installation)
 - [Usage](#usage)
-    - [registerWebComponent](#registerwebcomponent)
-    - [useWebComponentContext](#usewebcomponentcontext)
+  - [registerWebComponent](#registerwebcomponent)
+  - [transformBoolean](#transformboolean)
+  - [useWebComponentContext](#usewebcomponentcontext)
 - [Interfaces](#interfaces)
-    - [registerWebComponent](#registerwebcomponent-1)
-    - [WebComponentContext](#webcomponentcontext)
+  - [registerWebComponent](#registerwebcomponent-1)
+  - [WebComponentContext](#webcomponentcontext)
 
 <!-- ABOUT THE PROJECT -->
 
@@ -48,39 +49,48 @@ npm i -D @beuluis/regis-tag-me
 import {
     useWebComponentContext,
     registerWebComponent,
+    transformBoolean,
 } from "@beuluis/regis-tag-me";
 import { z } from "zod";
 
-const MyCustomElement = ({ firstName }: { firstName: string }) => {
+const MyCustomElement = ({
+    firstName,
+    showGreeting = true,
+}: {
+    firstName: string;
+    showGreeting: boolean;
+}) => {
     const { containerElement, element, hasShadowDom, stylesContainer } =
         useWebComponentContext();
 
     return (
         <div>
-            Hello {firstName} from {element.tagName}
+            {showGreeting && <span>Hello</span>} {firstName} from{" "}
+            {element.tagName}
         </div>
     );
 };
 
-registerWebComponent(
-    "my-custom-element",
-    MyCustomElement,
-    z.object({
-        firstName: z.string().default("Guest"),
-    }),
-);
+registerWebComponent("my-custom-element", MyCustomElement, {
+    firstName: z.string().default("Guest"),
+    showGreeting: z.string().transform(transformBoolean),
+});
 ```
 
 Use the custom tag in your HTML:
 
 ```html
 <!-- Result: Hello John from MY-CUSTOM-ELEMENT -->
-<my-custom-element first-name="John" />
+<my-custom-element first-name="John" show-greeting />
 ```
 
 ### registerWebComponent
 
 Registers a React component as a Web Component (Custom Element) using the given tag name. Takes [registerWebComponent](#registerwebcomponent) as arguments.
+
+### transformBoolean
+
+Helper to parse booleans correctly if passed by attributes.
 
 ### useWebComponentContext
 
@@ -92,12 +102,12 @@ Provides a context for the web component. Returns [WebComponentContext](#webcomp
 
 - `tagName` - The name of the custom element
 - `Component` - The React component to render inside the web component
-- `attributeSchema` - [Zod schema](https://zod.dev/) defining the attributes/props for the component with automatic type conversion for primitives (string, number, boolean, etc.)
+- `attributeSchema` - [StandardSchemaV1](https://github.com/standard-schema/standard-schema) defining the attributes/props for the component
 - `options` - Additional configuration options
-    - `mixin` - Optional mixin to extend the web component's functionality
+    - `mixin` - Optional mixin to extend the web component's functionality. Runs after this library's logic
     - `shadowDOM` - Controls whether to use Shadow DOM
         - If boolean: directly determines Shadow DOM usage
-        - If function: dynamically determines Shadow DOM usage based on attributes
+        - If function: dynamically determines Shadow DOM usage based on attributes. This only takes effect on the first render
 
 ### WebComponentContext
 

@@ -1,6 +1,9 @@
 import { registerWebComponent } from '../../src/WebComponent/registerWebComponent';
+import { transformBoolean } from '../utility/helper';
 import { type FC } from 'react';
 import { type Root } from 'react-dom/client';
+// eslint-disable-next-line id-length
+import * as v from 'valibot';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
@@ -20,9 +23,8 @@ describe('registerWebComponent', () => {
 
     it('should register a custom element with the given tag name', () => {
         const TestComponent: FC = () => <div>Test</div>;
-        const schema = z.object({});
 
-        registerWebComponent('test-component', TestComponent, schema);
+        registerWebComponent('test-component', TestComponent, {});
 
         expect(customElements.get('test-component')).toBeDefined();
     });
@@ -30,10 +32,9 @@ describe('registerWebComponent', () => {
     it('should not re-register an existing custom element', () => {
         const defineSpy = vi.spyOn(customElements, 'define');
         const TestComponent: FC = () => <div>Test</div>;
-        const schema = z.object({});
 
-        registerWebComponent('test-component-2', TestComponent, schema);
-        registerWebComponent('test-component-2', TestComponent, schema);
+        registerWebComponent('test-component-2', TestComponent, {});
+        registerWebComponent('test-component-2', TestComponent, {});
 
         expect(defineSpy).toHaveBeenCalledTimes(1);
     });
@@ -48,12 +49,10 @@ describe('registerWebComponent', () => {
             </div>
         );
 
-        const schema = z.object({
-            count: z.number(),
+        registerWebComponent('test-component-3', TestComponent, {
+            count: z.coerce.number(),
             name: z.string(),
         });
-
-        registerWebComponent('test-component-3', TestComponent, schema);
 
         const element = document.createElement('test-component-3');
         element.setAttribute('name', 'Test');
@@ -63,6 +62,54 @@ describe('registerWebComponent', () => {
         await nextTick();
 
         expect(element.textContent).toBe('Test - 42');
+    });
+
+    it('should render the React component with parsed attributes with different standard schema', async () => {
+        const TestComponent: FC<{ readonly count: number; readonly name: string }> = ({
+            count,
+            name,
+        }) => (
+            <div data-testid="test-output">
+                {name} - {count}
+            </div>
+        );
+
+        registerWebComponent('test-component-3', TestComponent, {
+            count: v.pipe(v.string(), v.transform(Number)),
+            name: v.string(),
+        });
+
+        const element = document.createElement('test-component-3');
+        element.setAttribute('name', 'Test');
+        element.setAttribute('count', '42');
+        document.body.appendChild(element);
+
+        await nextTick();
+
+        expect(element.textContent).toBe('Test - 42');
+    });
+
+    it('should handle default values', async () => {
+        const TestComponent: FC<{ readonly count: number; readonly name: string }> = ({
+            count,
+            name,
+        }) => (
+            <div>
+                {name} - {count}
+            </div>
+        );
+
+        registerWebComponent('test-component-default', TestComponent, {
+            count: z.coerce.number().default(0),
+            name: z.string().default('Default'),
+        });
+
+        const element = document.createElement('test-component-default');
+        document.body.appendChild(element);
+
+        await nextTick();
+
+        expect(element.textContent).toBe('Default - 0');
     });
 
     it('should parse different attribute types correctly', async () => {
@@ -79,15 +126,13 @@ describe('registerWebComponent', () => {
             </div>
         );
 
-        const schema = z.object({
-            bigIntAttr: z.bigint(),
-            dateAttr: z.date(),
-            numAttr: z.number(),
+        registerWebComponent('test-component-parse', TestComponent, {
+            bigIntAttr: z.coerce.bigint(),
+            dateAttr: z.coerce.date(),
+            numAttr: z.coerce.number(),
             strAttr: z.string(),
-            symbolAttr: z.symbol(),
+            symbolAttr: z.string().transform(Symbol),
         });
-
-        registerWebComponent('test-component-parse', TestComponent, schema);
 
         const element = document.createElement('test-component-parse');
         element.setAttribute('big-int-attr', '1234567890');
@@ -108,11 +153,9 @@ describe('registerWebComponent', () => {
             <div>{String(isEnabled)}</div>
         );
 
-        const schema = z.object({
-            isEnabled: z.boolean(),
+        registerWebComponent('test-component-bool', TestComponent, {
+            isEnabled: z.string().transform(transformBoolean),
         });
-
-        registerWebComponent('test-component-bool', TestComponent, schema);
 
         const element1 = document.createElement('test-component-bool');
         element1.setAttribute('is-enabled', '');
@@ -144,11 +187,9 @@ describe('registerWebComponent', () => {
             <div>{optionalAttr ?? 'default'}</div>
         );
 
-        const schema = z.object({
+        registerWebComponent('test-component-optional', TestComponent, {
             optionalAttr: z.string().optional(),
         });
-
-        registerWebComponent('test-component-optional', TestComponent, schema);
 
         const element = document.createElement('test-component-optional');
         document.body.appendChild(element);
@@ -159,11 +200,15 @@ describe('registerWebComponent', () => {
 
     it('should create shadow DOM when specified', async () => {
         const TestComponent: FC = () => <div>Shadow DOM Test</div>;
-        const schema = z.object({});
 
-        registerWebComponent('test-component-5', TestComponent, schema, {
-            shadowDOM: true,
-        });
+        registerWebComponent(
+            'test-component-5',
+            TestComponent,
+            {},
+            {
+                shadowDOM: true,
+            },
+        );
 
         const element = document.createElement('test-component-5');
         document.body.appendChild(element);
@@ -174,15 +219,19 @@ describe('registerWebComponent', () => {
         expect(element.shadowRoot?.querySelector('#root')).toBeDefined();
     });
 
-    it('should handle conditional shadow DOM based on attributes', async () => {
+    it('should handle conditional shadow DOM based on attributes when enabled', async () => {
         const TestComponent: FC<{ useShadow: boolean }> = () => <div>Conditional Shadow</div>;
-        const schema = z.object({
-            useShadow: z.boolean(),
-        });
 
-        registerWebComponent('test-component-6', TestComponent, schema, {
-            shadowDOM: ({ useShadow }) => useShadow,
-        });
+        registerWebComponent(
+            'test-component-6',
+            TestComponent,
+            {
+                useShadow: z.string().transform(transformBoolean),
+            },
+            {
+                shadowDOM: ({ useShadow }) => useShadow,
+            },
+        );
 
         const element = document.createElement('test-component-6');
         element.setAttribute('use-shadow', 'true');
@@ -191,6 +240,21 @@ describe('registerWebComponent', () => {
         await nextTick();
 
         expect(element.shadowRoot).toBeDefined();
+    });
+
+    it('should handle conditional shadow DOM based on attributes when disabled', async () => {
+        const TestComponent: FC<{ useShadow: boolean }> = () => <div>Conditional Shadow</div>;
+
+        registerWebComponent(
+            'test-component-6',
+            TestComponent,
+            {
+                useShadow: z.string().transform(transformBoolean),
+            },
+            {
+                shadowDOM: ({ useShadow }) => useShadow,
+            },
+        );
 
         const element2 = document.createElement('test-component-6');
         element2.setAttribute('use-shadow', 'false');
@@ -206,11 +270,9 @@ describe('registerWebComponent', () => {
             <div data-testid="test-output">{value}</div>
         );
 
-        const schema = z.object({
+        registerWebComponent('test-component-7', TestComponent, {
             value: z.string(),
         });
-
-        registerWebComponent('test-component-7', TestComponent, schema);
 
         const element = document.createElement('test-component-7');
         element.setAttribute('value', 'initial');
@@ -226,9 +288,8 @@ describe('registerWebComponent', () => {
 
     it('should cleanup React root on disconnection', async () => {
         const TestComponent: FC = () => <div>Cleanup Test</div>;
-        const schema = z.object({});
 
-        registerWebComponent('test-component-8', TestComponent, schema);
+        registerWebComponent('test-component-8', TestComponent, {});
 
         const element = document.createElement('test-component-8');
         document.body.appendChild(element);
@@ -264,13 +325,17 @@ describe('registerWebComponent', () => {
         };
 
         const TestComponent: FC = () => <div>Mixin Test</div>;
-        const schema = z.object({
-            testAttr: z.string().optional(),
-        });
 
-        registerWebComponent('test-component-9', TestComponent, schema, {
-            mixin,
-        });
+        registerWebComponent(
+            'test-component-9',
+            TestComponent,
+            {
+                testAttr: z.string().optional(),
+            },
+            {
+                mixin,
+            },
+        );
 
         const element = document.createElement('test-component-9');
         document.body.appendChild(element);
@@ -286,5 +351,39 @@ describe('registerWebComponent', () => {
         expect(connectedCallback).toHaveBeenCalled();
         expect(disconnectedCallback).toHaveBeenCalled();
         expect(attributeChangedCallback).toHaveBeenCalled();
+    });
+
+    it('should throw TypeError for async schema validation', () => {
+        const TestComponent: FC<{ readonly value: string }> = ({ value }) => <div>{value}</div>;
+
+        registerWebComponent('test-component-async', TestComponent, {
+            value: z.string().refine(async () => true),
+        });
+
+        const element = document.createElement('test-component-async') as HTMLElement & {
+            connectedCallback: () => void;
+        };
+        element.setAttribute('value', 'test');
+
+        expect(() => {
+            element.connectedCallback();
+        }).toThrowError('Schema validation must be synchronous');
+    });
+
+    it('should throw Error for invalid schema validation', () => {
+        const TestComponent: FC<{ readonly value: number }> = ({ value }) => <div>{value}</div>;
+
+        registerWebComponent('test-component-invalid', TestComponent, {
+            value: z.number(),
+        });
+
+        const element = document.createElement('test-component-invalid') as HTMLElement & {
+            connectedCallback: () => void;
+        };
+        element.setAttribute('value', 'not-a-number');
+
+        expect(() => {
+            element.connectedCallback();
+        }).toThrowError(/Expected number/u);
     });
 });
