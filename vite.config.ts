@@ -1,9 +1,9 @@
 // eslint-disable-next-line import/no-unassigned-import
 import 'vitest/config';
-import packageJson from './package.json';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 import dts from 'vite-plugin-dts';
+import { externalizeDeps } from 'vite-plugin-externalize-deps';
 
 export default defineConfig({
     build: {
@@ -13,13 +13,6 @@ export default defineConfig({
             formats: ['es', 'cjs'],
         },
         outDir: 'dist',
-        rollupOptions: {
-            external: [
-                ...Object.keys(packageJson.peerDependencies ?? {}),
-                'react-dom/client',
-                'react/jsx-runtime',
-            ],
-        },
         sourcemap: true,
     },
     define: { 'process.env.NODE_ENV': "'production'" },
@@ -28,6 +21,7 @@ export default defineConfig({
         dts({
             tsconfigPath: './tsconfig.build.json',
         }),
+        externalizeDeps(),
     ],
     test: {
         environment: 'jsdom',

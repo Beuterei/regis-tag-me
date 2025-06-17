@@ -1,8 +1,9 @@
 import { registerWebComponent } from '../../src/WebComponent/registerWebComponent';
+import { attributeBoolean } from '../utility/helper';
 import { type FC } from 'react';
 import { type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { z } from 'zod';
+import { z } from 'zod/v4';
 
 const nextTick = async () =>
     await new Promise<void>((resolve) => {
@@ -21,7 +22,7 @@ describe('registerWebComponent', () => {
     it('should register a custom element with the given tag name', () => {
         const TestComponent: FC = () => <div>Test</div>;
 
-        registerWebComponent('test-component', TestComponent, z.interface({}));
+        registerWebComponent('test-component', TestComponent, z.object({}));
 
         expect(customElements.get('test-component')).toBeDefined();
     });
@@ -30,8 +31,8 @@ describe('registerWebComponent', () => {
         const defineSpy = vi.spyOn(customElements, 'define');
         const TestComponent: FC = () => <div>Test</div>;
 
-        registerWebComponent('test-component-2', TestComponent, z.interface({}));
-        registerWebComponent('test-component-2', TestComponent, z.interface({}));
+        registerWebComponent('test-component-2', TestComponent, z.object({}));
+        registerWebComponent('test-component-2', TestComponent, z.object({}));
 
         expect(defineSpy).toHaveBeenCalledTimes(1);
     });
@@ -49,7 +50,7 @@ describe('registerWebComponent', () => {
         registerWebComponent(
             'test-component-3',
             TestComponent,
-            z.interface({
+            z.object({
                 count: z.coerce.number(),
                 name: z.string(),
             }),
@@ -71,7 +72,7 @@ describe('registerWebComponent', () => {
         registerWebComponent(
             'test-component-invalid',
             TestComponent,
-            z.interface({
+            z.object({
                 value: z.email(),
             }),
         );
@@ -99,7 +100,7 @@ describe('registerWebComponent', () => {
         registerWebComponent(
             'test-component-default',
             TestComponent,
-            z.interface({
+            z.object({
                 count: z.coerce.number().default(0),
                 name: z.string().default('Default'),
             }),
@@ -130,7 +131,7 @@ describe('registerWebComponent', () => {
         registerWebComponent(
             'test-component-parse',
             TestComponent,
-            z.interface({
+            z.object({
                 bigIntAttr: z.coerce.bigint(),
                 dateAttr: z.coerce.date(),
                 numAttr: z.coerce.number(),
@@ -161,11 +162,8 @@ describe('registerWebComponent', () => {
         registerWebComponent(
             'test-component-bool',
             TestComponent,
-            z.interface({
-                isEnabled: z.stringbool({
-                    falsy: ['false'],
-                    truthy: ['true', ''],
-                }),
+            z.object({
+                isEnabled: attributeBoolean,
             }),
         );
 
@@ -186,6 +184,11 @@ describe('registerWebComponent', () => {
         document.body.appendChild(element3);
         await nextTick();
         expect(element3.textContent).toBe('false');
+
+        const element4 = document.createElement('test-component-bool');
+        document.body.appendChild(element4);
+        await nextTick();
+        expect(element4.textContent).toBe('false');
     });
 
     it('should handle missing optional attributes', async () => {
@@ -196,7 +199,7 @@ describe('registerWebComponent', () => {
         registerWebComponent(
             'test-component-optional',
             TestComponent,
-            z.interface({
+            z.object({
                 optionalAttr: z.string().optional(),
             }),
         );
@@ -211,7 +214,7 @@ describe('registerWebComponent', () => {
     it('should create shadow DOM when specified', async () => {
         const TestComponent: FC = () => <div>Shadow DOM Test</div>;
 
-        registerWebComponent('test-component-5', TestComponent, z.interface({}), {
+        registerWebComponent('test-component-5', TestComponent, z.object({}), {
             shadowDOM: true,
         });
 
@@ -230,8 +233,8 @@ describe('registerWebComponent', () => {
         registerWebComponent(
             'test-component-6',
             TestComponent,
-            z.interface({
-                useShadow: z.stringbool(),
+            z.object({
+                useShadow: attributeBoolean,
             }),
             {
                 shadowDOM: ({ useShadow }) => useShadow,
@@ -253,8 +256,8 @@ describe('registerWebComponent', () => {
         registerWebComponent(
             'test-component-6',
             TestComponent,
-            z.interface({
-                useShadow: z.stringbool(),
+            z.object({
+                useShadow: attributeBoolean,
             }),
             {
                 shadowDOM: ({ useShadow }) => useShadow,
@@ -278,7 +281,7 @@ describe('registerWebComponent', () => {
         registerWebComponent(
             'test-component-7',
             TestComponent,
-            z.interface({
+            z.object({
                 value: z.string(),
             }),
         );
@@ -298,7 +301,7 @@ describe('registerWebComponent', () => {
     it('should cleanup React root on disconnection', async () => {
         const TestComponent: FC = () => <div>Cleanup Test</div>;
 
-        registerWebComponent('test-component-8', TestComponent, z.interface({}));
+        registerWebComponent('test-component-8', TestComponent, z.object({}));
 
         const element = document.createElement('test-component-8');
         document.body.appendChild(element);
@@ -338,7 +341,7 @@ describe('registerWebComponent', () => {
         registerWebComponent(
             'test-component-9',
             TestComponent,
-            z.interface({
+            z.object({
                 testAttr: z.string().optional(),
             }),
             {
